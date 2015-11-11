@@ -78,7 +78,9 @@ struct proxy_info proxy_server;
 #define NNTP_AUTH_ACCEPTED 281
 #define NNTP_MORE_AUTH     381
 #define NNTP_AUTH_REQUIRED 480
-#define NNTP_AUTH_REJECTED 482
+#define NNTP_AUTH_REJECTED 481
+#define NNTP_AUTH_OUT_OF_SEQ 482
+#define NNTP_SYNTAX_ERROR  501
 #define NNTP_NO_PERM       502
 
 #define NNTP_BANNER "NNTP Proxy service ready."
@@ -736,8 +738,9 @@ static void client_auth_readcb(struct bufferevent *bev, void *arg)
     }
 
     parse_nntp_cmd(cmd, cmd_args, &nargs);
-    if (nargs < 2) {
+    if (nargs <= 2) {
 	WARNING("invalid command\n");
+        evbuffer_add_printf(dst, "%d Syntax error\r\n", NNTP_SYNTAX_ERROR);
 	goto exit;
     }
 
@@ -758,15 +761,19 @@ static void client_auth_readcb(struct bufferevent *bev, void *arg)
 	evbuffer_add_printf(dst, "%d PASS required\r\n", NNTP_MORE_AUTH);
     } else if (!strcasecmp("PASS", cmd_args[1])) {
 	if (!conn->client_username) {
-	    evbuffer_add_printf(dst, "%d Authentication required for command\r\n",
-		    NNTP_AUTH_REQUIRED);
+	    evbuffer_add_printf(dst, "%d Authentication commands issued out of sequence\r\n",
+		    NNTP_AUTH_OUT_OF_SEQ);
 	    goto exit;
 	}
 
 	if (authenticate(conn->client_username, cmd_args[2]) == -1) {
 	    WARNING("Authentication failed for username %s\n", conn->client_username);
+	    // sleep 5 sec. to slowdown bruteforce attacks
+	    sleep(5);
+	    // send 502 and disconnect.
 	    evbuffer_add_printf(dst, "%d Wrong username or password\r\n",
-		    NNTP_AUTH_REJECTED);
+		    NNTP_NO_PERM);
+	    close_client(conn);
 	    goto exit;
 	}
 
