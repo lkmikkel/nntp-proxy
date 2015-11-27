@@ -19,9 +19,8 @@
 #include <errno.h>
 #include <arpa/inet.h>
 
-#ifdef __APPLE__
 #include <unistd.h>
-#else
+#ifndef __APPLE__
 #include <crypt.h>
 #endif
 
